@@ -1,0 +1,40 @@
+[workspace]
+members = ["crates/sensorium-core"]
+resolver = "2"
+
+[workspace.package]
+version = "0.2.0"
+edition = "2024"
+rust-version = "1.85"
+license = "Apache-2.0"
+repository = "https://github.com/broomva/sensorium"
+homepage = "https://github.com/broomva/sensorium"
+authors = ["Carlos D. Escobar-Valbuena <carlosbvalbuena@gmail.com>"]
+readme = "README.md"
+keywords = ["agents", "sensors", "intent", "context", "exteroception"]
+categories = ["data-structures", "no-std", "development-tools"]
+
+[workspace.dependencies]
+# --- Internal crates (path + version, ready for crates.io publish) ---
+sensorium-core = { path = "crates/sensorium-core", version = "0.2.0" }
+
+# --- Serialization (substrate is serde-first, but local-only by default) ---
+serde = { version = "1", features = ["derive", "rc"] }
+serde_json = "1"
+serde_test = "1"
+
+# --- Identifiers (UUIDv7 so snapshot IDs sort by creation time) ---
+uuid = { version = "1.10", features = ["v7", "serde"] }
+
+# --- Time (chrono for wall-clock, std::time for monotonic) ---
+chrono = { version = "0.4", features = ["serde"] }
+
+# --- Errors ---
+thiserror = "1"
+
+# --- Versioning ---
+semver = { version = "1", features = ["serde"] }
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
