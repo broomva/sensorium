@@ -7,14 +7,40 @@ Sensorium turns world observations into typed `PrimitiveToken` streams and a que
 
 ## Crates
 
-- [`sensorium-core`](crates/sensorium-core) — types-only foundation: workspace context,
-  primitive-token taxonomy, sensor metadata, privacy markers. No I/O.
+| Crate | Role | Tests |
+|---|---|---|
+| [`sensorium-core`](crates/sensorium-core) | Substrate types — `WorkspaceContext`, `WorkspaceSnapshot`, `PrimitiveToken`, `Tagged<T>`, privacy markers, ring buffer, calibrated provenance. No I/O. | 81 |
+| [`sensorium-context`](crates/sensorium-context) | Pull-based `Observer` trait + `ManualObserver` (tests/demos) + `FsObserver` (notify-based, real-world tokens). Phase 1.1. | 13 |
 
-Future phase-1+ crates (not yet built): `sensorium-context` (workspace observers),
-`sensorium-vision` (MediaPipe/WiLoR), `sensorium-voice` (Whisper), `sensorium-gaze`
-(eye tracking), `sensorium-headset` (Quest 3 / Vision Pro), `sensorium-lago` (replay
-journal bridge).
+**Total tests:** 94 · all green on `cargo test --workspace`.
+
+Future Phase-1.2+ crates (not yet built): `sensorium-context-macos` (NSWorkspace +
+Accessibility API), `sensorium-vision` (MediaPipe / WiLoR), `sensorium-voice`
+(Whisper streaming), `sensorium-gaze` (eye tracking), `sensorium-headset`
+(Quest 3 / Vision Pro), `sensorium-lago` (replay journal bridge).
 
 ## Status
 
-v0.2.0 — types-only, phase 0 of the MIL build order. See `MIL-PROJECT.md` §11.
+v0.2.0 — Phase 1.1 of the MIL build order shipped.
+The `Observer` trait is the boundary between Sensorium (which produces world
+observations) and Pneuma (which consumes them as `WorkspaceContext`).
+`FsObserver` is the first observer that produces real-world tokens; downstream
+the `pneuma-demo` binary takes `Box<dyn Observer>` so callers can swap
+`ManualObserver` (tests) for `FsObserver` (the rename demo) at runtime.
+
+## What's wired up today
+
+`broomva/pneuma`'s demo binary depends on `sensorium-context` via a path
+dependency (`../sensorium`). That demo runs the full pipeline end-to-end on
+a tempdir: an `FsObserver` watches the tempdir, a directive parses out of an
+`MIL_UTTERANCE` env var, the router dispatches to the Praxis bridge, the
+journal records the run, and the HUD prints frames. See
+[`MIL-PROJECT.md`](../../MIL-PROJECT.md) §10 for the full crate-by-crate
+breakdown and [`docs/mil/progress-snapshot-tier-2-complete.md`](../../docs/mil/progress-snapshot-tier-2-complete.md)
+for the current state across both repos.
+
+## Cross-references
+
+- [`MIL-PROJECT.md`](../../MIL-PROJECT.md) §10.5–§10.6 — sensorium-core and sensorium-context build notes
+- [`MIL-PROJECT.md`](../../MIL-PROJECT.md) §13 — design decisions (D-2026-05-02-01..07, D-2026-05-03-15..16 are sensorium-related)
+- [`docs/mil/router-and-harness.md`](../../docs/mil/router-and-harness.md) — where Sensorium sits in the MIL stack
