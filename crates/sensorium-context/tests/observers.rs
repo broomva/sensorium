@@ -103,7 +103,11 @@ fn manual_observer_implements_observer_trait() {
     let m = ManualObserver::new(Timestamp::now());
     // Coerce through the trait; if this compiles + runs, the impl is
     // wired correctly.
-    let _checked: &dyn Observer = &m;
+    // Coerce through the trait + invoke a method, proving both that
+    // `ManualObserver` implements `Observer` and that the trait
+    // method works through a trait-object boundary.
+    let as_trait: &dyn Observer = &m;
+    let _ = as_trait.current();
 }
 
 // --- FsObserver ------------------------------------------------------------
@@ -158,7 +162,11 @@ fn fs_observer_drop_joins_cleanly() {
 fn fs_observer_implements_observer_trait() {
     let dir = tempfile::tempdir().unwrap();
     let observer = FsObserver::watch(dir.path(), false).unwrap();
-    let _checked: &dyn Observer = &observer;
+    // Coerce through the trait + invoke a method, proving both that
+    // `FsObserver` implements `Observer` and that the trait method
+    // works through a trait-object boundary.
+    let as_trait: &dyn Observer = &observer;
+    let _ = as_trait.current();
 }
 
 #[test]
