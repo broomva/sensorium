@@ -1,5 +1,8 @@
 [workspace]
-members = ["crates/sensorium-core"]
+members = [
+    "crates/sensorium-core",
+    "crates/sensorium-context",
+]
 resolver = "2"
 
 [workspace.package]
@@ -17,6 +20,13 @@ categories = ["data-structures", "no-std", "development-tools"]
 [workspace.dependencies]
 # --- Internal crates (path + version, ready for crates.io publish) ---
 sensorium-core = { path = "crates/sensorium-core", version = "0.2.0" }
+sensorium-context = { path = "crates/sensorium-context", version = "0.2.0" }
+
+# --- Filesystem watcher for FsObserver ---
+notify = "6.1"
+
+# --- Tempdir for tests ---
+tempfile = "3.10"
 
 # --- Serialization (substrate is serde-first, but local-only by default) ---
 serde = { version = "1", features = ["derive", "rc"] }
