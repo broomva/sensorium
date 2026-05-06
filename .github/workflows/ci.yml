@@ -23,6 +23,10 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
+      # cpal (sensorium-voice's `feature = "audio"`) links against
+      # ALSA on Linux; Ubuntu runners don't ship the dev headers.
+      - name: Install ALSA dev headers (Linux)
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev
       - name: Cache
         uses: Swatinem/rust-cache@v2
       - name: cargo fmt --check
@@ -43,6 +47,11 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
+      # cpal (sensorium-voice's `feature = "audio"`) links against
+      # ALSA on Linux; macOS uses CoreAudio and needs nothing extra.
+      - name: Install ALSA dev headers (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev
       - name: Cache
         uses: Swatinem/rust-cache@v2
       - name: cargo test
