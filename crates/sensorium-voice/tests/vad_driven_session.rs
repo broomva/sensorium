@@ -9,7 +9,7 @@
 //! This is the "audio plumbing test" that proves the pipeline
 //! works without real microphone hardware. The macOS-gated
 //! interactive test in `audio_pipeline.rs` covers the cpal +
-//! Silero V5 + microphone end of things.
+//! microphone end of things.
 
 use sensorium_core::PrimitiveToken;
 use sensorium_voice::{Backend, MockVad, VadGate, VadGateConfig, VoiceConfig, VoiceSession};
@@ -114,8 +114,9 @@ fn pure_silence_emits_no_tokens() {
 
 #[test]
 fn buffer_below_chunk_size_does_not_invoke_vad() {
-    // 511 samples — one short of a Silero V5 chunk. Nothing should
-    // happen: VAD never gets called, gate stays Idle, no tokens.
+    // 511 samples — one short of the default 512-sample chunk.
+    // Nothing should happen: VAD never gets called, gate stays
+    // Idle, no tokens.
     let mut session = VoiceSession::new(VoiceConfig::mock("unused")).expect("session");
     let rx = session.tokens().expect("tokens");
     let mut vad = MockVad::constant(0.99);

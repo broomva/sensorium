@@ -1,9 +1,9 @@
 //! # sensorium-voice
 //!
 //! Voice-input substrate for the Sensorium / MIL stack. Streams
-//! microphone audio through Silero V5 voice activity detection and
-//! NVIDIA Parakeet TDT (EOU streaming variant) on-device, emitting
-//! `PrimitiveToken { kind: Predication }` tokens with full
+//! microphone audio through an energy-RMS voice activity detector
+//! and NVIDIA Parakeet TDT (EOU streaming variant) on-device,
+//! emitting `PrimitiveToken { kind: Predication }` tokens with full
 //! provenance.
 //!
 //! Step #17 of `MIL-PROJECT.md` §11.2. The final piece of MIL Tier 3.
@@ -17,7 +17,7 @@
 //! ringbuf (lock-free SPSC)
 //!    │
 //!    ▼
-//! VAD gate (Silero V5)
+//! VAD gate (EnergyVad — RMS energy, zero deps)
 //!    │
 //!    ▼  speech-only audio
 //! SpeechToText backend (Parakeet EOU / Mock / future Whisper)
@@ -68,10 +68,13 @@ pub use config::{Backend, VoiceConfig};
 pub use error::VoiceError;
 pub use session::VoiceSession;
 pub use token::predication_token;
-pub use vad::{MockVad, VadEvent, VadGate, VadGateConfig, VadModel};
-
-#[cfg(feature = "audio")]
-pub use vad::SileroVad;
+pub use vad::{EnergyVad, MockVad, VadEvent, VadGate, VadGateConfig, VadModel};
 
 #[cfg(feature = "audio")]
 pub use audio::{AudioCapture, AudioCaptureConfig};
+
+#[cfg(feature = "parakeet")]
+pub use parakeet::ParakeetStt;
+
+#[cfg(feature = "parakeet")]
+mod parakeet;

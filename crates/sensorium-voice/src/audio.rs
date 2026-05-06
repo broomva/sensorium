@@ -6,9 +6,10 @@
 //!
 //! ## Sample-rate strategy
 //!
-//! Silero V5 (our VAD) requires 16kHz exactly. macOS default mic
-//! configs vary: built-in mics often default to 44.1kHz or 48kHz;
-//! some USB mics offer 16kHz natively.
+//! Both Parakeet EOU and our `EnergyVad` (and the future Silero V5
+//! re-introduction) want 16kHz. macOS default mic configs vary:
+//! built-in mics often default to 44.1kHz or 48kHz; some USB mics
+//! offer 16kHz natively.
 //!
 //! v0.2 strategy: prefer 16kHz if the device supports it; otherwise
 //! resample with a simple linear interpolator at capture time.
@@ -47,7 +48,7 @@ use crate::error::VoiceError;
 #[derive(Debug, Clone)]
 pub struct AudioCaptureConfig {
     /// Target sample rate the consumer will see (always 16kHz for
-    /// the v0.2 Silero / Parakeet pipeline). The capture path
+    /// the v0.2 EnergyVad / Parakeet pipeline). The capture path
     /// resamples if the device runs at a different rate.
     pub target_sample_rate: u32,
     /// Ring buffer capacity in samples. ~3 seconds at 16kHz f32 mono

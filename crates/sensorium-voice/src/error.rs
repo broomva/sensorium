@@ -24,7 +24,8 @@ pub enum VoiceError {
     #[error("inference thread spawn failed: {0}")]
     ThreadSpawn(std::io::Error),
 
-    /// Failed to load Silero VAD weights.
+    /// Failed to set up a VAD model (e.g., loading weights, opening
+    /// an ONNX session, etc.).
     #[error("VAD setup failed: {0}")]
     VadSetup(String),
 

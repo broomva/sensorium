@@ -48,7 +48,9 @@ impl Backend {
 pub struct VoiceConfig {
     /// Which STT backend to dispatch to.
     pub backend: Backend,
-    /// Target sample rate (always 16kHz for Parakeet / Silero VAD).
+    /// Target sample rate (always 16kHz for Parakeet / EnergyVad —
+    /// also the canonical Silero V5 rate, so this stays compatible
+    /// when we re-add a trained-model VAD).
     /// Resampling happens transparently if the input device differs.
     pub sample_rate: u32,
     /// Maximum recording window — backstop in case VAD never detects

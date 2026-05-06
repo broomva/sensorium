@@ -1,16 +1,19 @@
 //! Integration tests for [`VoiceSession`].
 //!
-//! v0.2 tests the Mock backend path end-to-end. Real Parakeet
-//! inference (cpal + ort + hf-hub) is gated behind the future
-//! `parakeet` feature flag — its tests will live alongside.
+//! Default-feature tests cover the Mock backend path end-to-end.
+//! Real Parakeet inference lives in `parakeet_inference.rs`, gated
+//! behind `feature = "parakeet"` and `#[ignore]`'d for the live
+//! ONNX path.
 //!
 //! Properties under test:
 //!
 //! 1. **Mock backend constructs cleanly** — `VoiceConfig::mock(...)`
 //!    yields a usable session.
-//! 2. **Parakeet without feature flag errors gracefully** — the
-//!    v0.2 stub returns `BackendSetup` with a clear message rather
-//!    than panicking.
+//! 2. **Parakeet without feature flag errors gracefully** —
+//!    `Backend::Parakeet` returns `BackendSetup` with a clear
+//!    message when the `parakeet` feature is OFF (the default).
+//!    Skipped when the feature is ON because the backend actually
+//!    constructs in that build.
 //! 3. **`feed` is a no-op for Mock** — the backend ignores audio
 //!    chunks (returns `None` deltas).
 //! 4. **`flush` emits a Final token** — the canned response surfaces
@@ -24,7 +27,9 @@
 //!    the receiver was already taken.
 
 use sensorium_core::{PrimitiveToken, PrivacyTier};
-use sensorium_voice::{Backend, MockStt, SpeechToText, VoiceConfig, VoiceError, VoiceSession};
+#[cfg(not(feature = "parakeet"))]
+use sensorium_voice::VoiceError;
+use sensorium_voice::{Backend, MockStt, SpeechToText, VoiceConfig, VoiceSession};
 
 // --- Property 1: Constructor -----------------------------------------------
 
@@ -35,7 +40,13 @@ fn mock_session_constructs_cleanly() {
 }
 
 // --- Property 2: Parakeet stub error ---------------------------------------
+//
+// Only meaningful when the `parakeet` feature is OFF. With the
+// feature ON, `Backend::Parakeet` actually constructs a real
+// `ParakeetStt` (and may even download weights), which is the
+// exact opposite of what this test asserts.
 
+#[cfg(not(feature = "parakeet"))]
 #[test]
 fn parakeet_backend_without_feature_flag_errors_with_helpful_message() {
     let cfg = VoiceConfig {

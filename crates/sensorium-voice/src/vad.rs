@@ -3,9 +3,14 @@
 //! Two-piece design:
 //!
 //! 1. [`VadModel`] trait — abstracts over the VAD engine. Concrete
-//!    impls: [`MockVad`] (no deps, programmable for tests),
-//!    `SileroVad` (cfg-gated to `feature = "audio"`, wraps Silero V5
-//!    via the `voice_activity_detector` crate).
+//!    impls: [`MockVad`] (programmable for tests) and [`EnergyVad`]
+//!    (zero-dep RMS-energy detector). A trained Silero V5 wrapper
+//!    is intentionally absent: the only crates.io crate
+//!    (`voice_activity_detector`) pins `ort=2.0.0-rc.10`, while
+//!    `parakeet-rs` requires `ort=2.0.0-rc.12`, and Cargo cannot
+//!    satisfy both simultaneously. Once upstream realigns we'll
+//!    re-add it; until then `EnergyVad` is enough for explicit
+//!    voice input.
 //! 2. [`VadGate`] — utterance-boundary state machine. Consumes a
 //!    stream of probabilities and emits `VadEvent::SpeechStart` /
 //!    `SpeechEnd` based on configurable hysteresis thresholds.
@@ -22,9 +27,10 @@ use crate::error::VoiceError;
 /// Implementations consume a fixed-size chunk of audio samples and
 /// return a probability of speech in `[0.0, 1.0]`.
 ///
-/// Silero V5 (the engine we wrap in `SileroVad`) requires fixed
-/// chunk sizes: 256 samples at 8kHz, 512 samples at 16kHz. Other
-/// implementations may have different constraints.
+/// We default to 16kHz / 512-sample chunks throughout — the same
+/// shape Silero V5 uses, so a future Silero impl will plug in
+/// without gate-config changes. Other implementations may pick
+/// different constraints.
 pub trait VadModel: Send {
     /// Predict speech probability for one chunk of `f32` samples
     /// at the configured sample rate.
@@ -101,46 +107,91 @@ impl VadModel for MockVad {
     }
 }
 
-// --- SileroVad (feature = "audio") ----------------------------------------
+// --- EnergyVad (always available) -----------------------------------------
 
-/// Real VAD via Silero V5. Behind `feature = "audio"`.
+/// Energy-RMS voice activity detector — zero deps.
 ///
-/// Wraps the `voice_activity_detector` crate. Hard-coded to 16kHz
-/// with 512-sample chunks (the only configuration Silero V5
-/// supports at 16kHz, per its docs). Other sample rates would
-/// require a resampling layer in the audio capture path.
-#[cfg(feature = "audio")]
-pub struct SileroVad {
-    inner: voice_activity_detector::VoiceActivityDetector,
+/// Computes the root-mean-square energy of each chunk and maps it
+/// to a probability via a soft threshold. Less accurate than a
+/// trained Silero V5 model for ambiguous audio (background hum,
+/// sneezes), but sufficient for explicit voice input where the
+/// user pauses between utterances.
+///
+/// The mapping: chunks below `silence_floor` (default `-50dB` of
+/// peak f32 = `0.003` RMS) → probability 0; above `speech_floor`
+/// (`-30dB` = `0.032` RMS) → probability 1; linear ramp between.
+///
+/// Defaults: 16kHz, 512-sample chunks (32ms) — Silero-V5-shaped
+/// so the gate config is interchangeable with a future trained-model
+/// VAD.
+pub struct EnergyVad {
+    sample_rate: u32,
+    chunk_size: usize,
+    silence_floor: f32,
+    speech_floor: f32,
 }
 
-#[cfg(feature = "audio")]
-impl SileroVad {
-    /// Construct a Silero V5 VAD at 16kHz with 512-sample chunks.
-    pub fn new() -> Result<Self, VoiceError> {
-        let inner = voice_activity_detector::VoiceActivityDetector::builder()
-            .sample_rate(16_000_i64)
-            .chunk_size(512_usize)
-            .build()
-            .map_err(|e| VoiceError::VadSetup(format!("{e}")))?;
-        Ok(Self { inner })
+impl EnergyVad {
+    /// Construct with default thresholds (16kHz, 512-sample chunks,
+    /// `-50dB` silence floor, `-30dB` speech floor). Mic input
+    /// normalized to roughly `[-1, 1]`.
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            sample_rate: 16_000,
+            chunk_size: 512,
+            silence_floor: 0.003,
+            speech_floor: 0.032,
+        }
+    }
+
+    /// Construct with custom thresholds. `silence_floor` should be
+    /// less than `speech_floor`; both are RMS amplitudes.
+    #[must_use]
+    pub fn with_thresholds(silence_floor: f32, speech_floor: f32) -> Self {
+        Self {
+            sample_rate: 16_000,
+            chunk_size: 512,
+            silence_floor,
+            speech_floor,
+        }
     }
 }
 
-#[cfg(feature = "audio")]
-impl VadModel for SileroVad {
+impl Default for EnergyVad {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl VadModel for EnergyVad {
     fn predict(&mut self, samples: &[f32]) -> Result<f32, VoiceError> {
-        // The crate truncates/pads to chunk_size internally per its
-        // docs. We pass the buffer through.
-        Ok(self.inner.predict(samples.iter().copied()))
+        if samples.is_empty() {
+            return Ok(0.0);
+        }
+        // RMS = sqrt(mean(x^2)). f64 accumulator to avoid f32
+        // precision loss on 512-sample sums.
+        let sum_sq: f64 = samples.iter().map(|&s| f64::from(s) * f64::from(s)).sum();
+        #[allow(clippy::cast_precision_loss)]
+        let mean_sq = sum_sq / (samples.len() as f64);
+        #[allow(clippy::cast_possible_truncation)]
+        let rms = (mean_sq.sqrt()) as f32;
+        let p = if rms <= self.silence_floor {
+            0.0
+        } else if rms >= self.speech_floor {
+            1.0
+        } else {
+            (rms - self.silence_floor) / (self.speech_floor - self.silence_floor)
+        };
+        Ok(p)
     }
 
     fn sample_rate(&self) -> u32 {
-        16_000
+        self.sample_rate
     }
 
     fn chunk_size(&self) -> usize {
-        512
+        self.chunk_size
     }
 }
 

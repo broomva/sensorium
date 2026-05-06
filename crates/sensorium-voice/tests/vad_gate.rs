@@ -23,7 +23,7 @@
 //!    with zero counters.
 //! 8. **Custom config** — adjustable thresholds + chunk counts work.
 
-use sensorium_voice::{MockVad, VadEvent, VadGate, VadGateConfig, VadModel};
+use sensorium_voice::{EnergyVad, MockVad, VadEvent, VadGate, VadGateConfig, VadModel};
 
 // --- Property 1 -----------------------------------------------------------
 
@@ -213,4 +213,85 @@ fn mock_vad_default_chunk_size_is_silero_compatible() {
     let m = MockVad::constant(0.0);
     assert_eq!(m.sample_rate(), 16_000);
     assert_eq!(m.chunk_size(), 512);
+}
+
+// --- EnergyVad smoke checks -----------------------------------------------
+
+#[test]
+fn energy_vad_silence_returns_zero_probability() {
+    let mut v = EnergyVad::new();
+    let silence = vec![0.0_f32; 512];
+    let p = v.predict(&silence).unwrap();
+    assert!((p - 0.0).abs() < f32::EPSILON, "silence → 0, got {p}");
+}
+
+#[test]
+fn energy_vad_loud_signal_returns_high_probability() {
+    let mut v = EnergyVad::new();
+    // Sine-like-ish: sustained 0.5 amplitude. RMS = 0.5 — well above
+    // the default speech_floor (0.032).
+    let loud: Vec<f32> = (0..512)
+        .map(|i| if i % 2 == 0 { 0.5 } else { -0.5 })
+        .collect();
+    let p = v.predict(&loud).unwrap();
+    assert!((p - 1.0).abs() < f32::EPSILON, "loud signal → 1, got {p}");
+}
+
+#[test]
+fn energy_vad_band_returns_intermediate_probability() {
+    // RMS halfway between thresholds (~0.018) → ~0.5 probability.
+    let mut v = EnergyVad::new();
+    let amp = 0.018_f32;
+    let band: Vec<f32> = (0..512)
+        .map(|i| if i % 2 == 0 { amp } else { -amp })
+        .collect();
+    let p = v.predict(&band).unwrap();
+    assert!(p > 0.0 && p < 1.0, "band → (0, 1), got {p}");
+}
+
+#[test]
+fn energy_vad_default_chunk_size_matches_silero() {
+    let v = EnergyVad::new();
+    assert_eq!(v.sample_rate(), 16_000);
+    assert_eq!(v.chunk_size(), 512);
+}
+
+#[test]
+fn energy_vad_custom_thresholds() {
+    let mut v = EnergyVad::with_thresholds(0.01, 0.02);
+    // RMS ≈ 0.005 — below silence_floor → 0.
+    let quiet: Vec<f32> = (0..512)
+        .map(|i| if i % 2 == 0 { 0.005 } else { -0.005 })
+        .collect();
+    assert!((v.predict(&quiet).unwrap() - 0.0).abs() < f32::EPSILON);
+}
+
+#[test]
+fn energy_vad_drives_gate_end_to_end() {
+    // Real plumbing: feed alternating silence + loud chunks through
+    // the Vad → Gate pipeline and assert utterance-boundary events.
+    let mut v = EnergyVad::new();
+    let mut g = VadGate::with_config(VadGateConfig {
+        speech_threshold: 0.6,
+        silence_threshold: 0.3,
+        speech_chunks: 1,
+        silence_chunks: 1,
+    });
+
+    let silence = vec![0.0_f32; 512];
+    let loud: Vec<f32> = (0..512)
+        .map(|i| if i % 2 == 0 { 0.5 } else { -0.5 })
+        .collect();
+
+    // 2 silent chunks → no event.
+    for _ in 0..2 {
+        let p = v.predict(&silence).unwrap();
+        assert_eq!(g.observe(p), None);
+    }
+    // 1 loud chunk → SpeechStart (tight gate config).
+    let p_loud = v.predict(&loud).unwrap();
+    assert_eq!(g.observe(p_loud), Some(VadEvent::SpeechStart));
+    // 1 silent chunk → SpeechEnd.
+    let p_silent = v.predict(&silence).unwrap();
+    assert_eq!(g.observe(p_silent), Some(VadEvent::SpeechEnd));
 }

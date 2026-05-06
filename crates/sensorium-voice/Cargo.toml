@@ -1,6 +1,6 @@
 [package]
 name = "sensorium-voice"
-description = "Voice-input substrate for the Sensorium / MIL stack. Streams microphone audio through Silero V5 voice activity detection and NVIDIA Parakeet TDT (EOU streaming variant) on-device on Apple Silicon, emitting PrimitiveToken { kind: Predication } tokens with full provenance. Step #17 of the MIL Tier 3 build."
+description = "Voice-input substrate for the Sensorium / MIL stack. Streams microphone audio through an energy-RMS voice activity detector and NVIDIA Parakeet TDT (EOU streaming variant) on-device on Apple Silicon, emitting PrimitiveToken { kind: Predication } tokens with full provenance. Step #17 of the MIL Tier 3 build."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -24,27 +24,35 @@ chrono = { workspace = true }
 #   on macOS, ALSA on Linux. Captures 16kHz f32 mono.
 # - `ringbuf` is a lock-free SPSC ring between the cpal callback
 #   (real-time audio thread) and the inference thread.
-# - `voice_activity_detector` wraps Silero VAD V5 via ONNX Runtime;
-#   ~1ms per 30ms chunk on CPU.
 cpal = { version = "0.17", optional = true }
 ringbuf = { version = "0.5", optional = true }
-voice_activity_detector = { version = "0.2", optional = true }
+
+# Parakeet path (`feature = "parakeet"`).
+# - parakeet-rs 0.3.x wraps NVIDIA Parakeet via the ort Rust ONNX
+#   Runtime; EOU variant streams at 160ms chunks.
+# - hf-hub bootstraps the ~150MB model weights on first run.
+#
+# NOTE: parakeet-rs ^0.3 transitively pins `ort ^2.0.0-rc.12`, which
+# is incompatible with `voice_activity_detector` 0.2.x (`=2.0.0-rc.10`).
+# Cargo resolves a single ort version per workspace, so the two crates
+# can't coexist as deps even when feature-gated. We therefore ship
+# only `EnergyVad` (zero deps) for VAD; downstream callers who need
+# Silero V5 specifically can wire it themselves once upstream aligns.
+parakeet-rs = { version = "0.3", optional = true }
+hf-hub = { version = "0.4", optional = true, features = ["ureq"] }
 
 [dev-dependencies]
 tempfile = { workspace = true }
 
 [features]
 default = []
-# Audio capture + VAD layer. Builds the cpal mic-capture pipeline,
-# the Silero V5 VAD gate, and the AudioCapture struct. Enables
-# `VoiceSession::start_audio`. Mock STT backend works against real
-# microphone audio when this is enabled (proves the wiring before
-# Parakeet ships).
-audio = ["dep:cpal", "dep:ringbuf", "dep:voice_activity_detector"]
-# Future: real Parakeet TDT EOU streaming inference via parakeet-rs +
-# ort + hf-hub. `parakeet` implies `audio` because Parakeet needs the
-# audio pipeline to feed it.
-parakeet = ["audio"]
+# Audio capture path. cpal mic capture + ringbuf SPSC + the
+# zero-dep energy-RMS VAD (`EnergyVad`). Sufficient for explicit
+# hold-to-talk / one-utterance-at-a-time voice input.
+audio = ["dep:cpal", "dep:ringbuf"]
+# Real Parakeet TDT EOU streaming inference via parakeet-rs + ort +
+# hf-hub. Implies `audio`.
+parakeet = ["audio", "dep:parakeet-rs", "dep:hf-hub"]
 
 [lints.rust]
 missing_docs = "warn"

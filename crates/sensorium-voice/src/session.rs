@@ -57,16 +57,18 @@ impl VoiceSession {
     pub fn new(config: VoiceConfig) -> Result<Self, VoiceError> {
         let backend: Box<dyn SpeechToText> = match config.backend {
             Backend::Mock { responses } => Box::new(crate::backend::MockStt::new(responses)),
+            #[cfg(feature = "parakeet")]
+            Backend::Parakeet { weights_dir } => {
+                Box::new(crate::parakeet::ParakeetStt::new(weights_dir)?)
+            }
+            #[cfg(not(feature = "parakeet"))]
             Backend::Parakeet { weights_dir: _ } => {
-                // v0.2 stub: surface a clean error so callers can
-                // fall back to Mock or skip voice. Real Parakeet
-                // wiring lands behind feature = "parakeet" in v0.3.
                 return Err(VoiceError::BackendSetup(
-                    "Parakeet backend not wired in v0.2 — use Backend::Mock or enable \
-                     the future `feature = \"parakeet\"`. The crate scaffolding, \
-                     trait, mock backend, and demo integration all ship in v0.2; \
-                     real ONNX inference lands in a follow-up that includes the \
-                     hf-hub weight bootstrap and the parakeet-rs streaming loop."
+                    "Parakeet backend requires `feature = \"parakeet\"`. \
+                     Build with `cargo build --features parakeet` (or add it \
+                     to your dependent crate's feature list). The Parakeet \
+                     path adds parakeet-rs + ort + hf-hub deps; the default \
+                     build stays dep-light."
                         .to_owned(),
                 ));
             }
@@ -142,9 +144,10 @@ impl VoiceSession {
     /// session's STT backend.
     ///
     /// `samples` is a mono `f32` stream at the VAD's required
-    /// sample rate (16kHz for Silero V5). The driver:
+    /// sample rate (16kHz for `EnergyVad` and the future Silero V5
+    /// re-introduction). The driver:
     ///
-    /// 1. Buffers samples to the VAD's chunk size (512 for Silero V5).
+    /// 1. Buffers samples to the VAD's chunk size (512 by default).
     /// 2. Calls `vad.predict(chunk)` to get per-chunk speech
     ///    probability.
     /// 3. Feeds the chunk into [`VadGate::observe`] — the gate
