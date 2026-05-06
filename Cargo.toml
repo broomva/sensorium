@@ -3,6 +3,7 @@ members = [
     "crates/sensorium-core",
     "crates/sensorium-context",
     "crates/sensorium-context-macos",
+    "crates/sensorium-voice",
 ]
 resolver = "2"
 
@@ -23,6 +24,7 @@ categories = ["data-structures", "no-std", "development-tools"]
 sensorium-core = { path = "crates/sensorium-core", version = "0.2.0" }
 sensorium-context = { path = "crates/sensorium-context", version = "0.2.0" }
 sensorium-context-macos = { path = "crates/sensorium-context-macos", version = "0.2.0" }
+sensorium-voice = { path = "crates/sensorium-voice", version = "0.2.0" }
 
 # --- Filesystem watcher for FsObserver ---
 notify = "6.1"

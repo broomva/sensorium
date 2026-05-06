@@ -1,0 +1,50 @@
+[package]
+name = "sensorium-voice"
+description = "Voice-input substrate for the Sensorium / MIL stack. Streams microphone audio through Silero V5 voice activity detection and NVIDIA Parakeet TDT (EOU streaming variant) on-device on Apple Silicon, emitting PrimitiveToken { kind: Predication } tokens with full provenance. Step #17 of the MIL Tier 3 build."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
+readme.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[dependencies]
+sensorium-core = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+chrono = { workspace = true }
+
+# v0.2 ships the trait + Mock + scaffolding. Real Parakeet inference
+# (parakeet-rs + ort + hf-hub + cpal + voice_activity_detector + ringbuf)
+# lands behind `feature = "parakeet"` in a follow-up PR. Same pattern
+# as pneuma-arcan-bridge: library shape first, real subprocess wiring
+# next.
+
+[dev-dependencies]
+tempfile = { workspace = true }
+
+[features]
+default = []
+# Future: real Parakeet TDT EOU streaming inference via parakeet-rs +
+# ort + hf-hub. Enabling this feature pulls in cpal, ringbuf,
+# voice_activity_detector, parakeet-rs, hf-hub. Land in v0.3 when the
+# weight-bootstrap + audio-capture wiring is ready.
+parakeet = []
+
+[lints.rust]
+missing_docs = "warn"
+unsafe_code = "forbid"
+
+[lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+module_name_repetitions = "allow"
+must_use_candidate = "allow"
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+return_self_not_must_use = "allow"
+doc_markdown = "allow"
