@@ -58,9 +58,20 @@ mod config;
 mod error;
 mod session;
 mod token;
+mod vad;
+
+#[cfg(feature = "audio")]
+mod audio;
 
 pub use backend::{MockStt, SpeechToText, TranscriptDelta};
 pub use config::{Backend, VoiceConfig};
 pub use error::VoiceError;
 pub use session::VoiceSession;
 pub use token::predication_token;
+pub use vad::{MockVad, VadEvent, VadGate, VadGateConfig, VadModel};
+
+#[cfg(feature = "audio")]
+pub use vad::SileroVad;
+
+#[cfg(feature = "audio")]
+pub use audio::{AudioCapture, AudioCaptureConfig};

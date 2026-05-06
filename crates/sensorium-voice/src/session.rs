@@ -29,6 +29,7 @@ use crate::backend::{SpeechToText, TranscriptDelta};
 use crate::config::{Backend, VoiceConfig};
 use crate::error::VoiceError;
 use crate::token::predication_token;
+use crate::vad::{VadEvent, VadGate, VadModel};
 
 /// Voice-input session.
 ///
@@ -135,5 +136,77 @@ impl VoiceSession {
     #[must_use]
     pub fn sensor_id(&self) -> SensorId {
         self.sensor
+    }
+
+    /// Drive a stream of audio chunks through a VAD model + the
+    /// session's STT backend.
+    ///
+    /// `samples` is a mono `f32` stream at the VAD's required
+    /// sample rate (16kHz for Silero V5). The driver:
+    ///
+    /// 1. Buffers samples to the VAD's chunk size (512 for Silero V5).
+    /// 2. Calls `vad.predict(chunk)` to get per-chunk speech
+    ///    probability.
+    /// 3. Feeds the chunk into [`VadGate::observe`] — the gate
+    ///    transitions Idle → Speaking on hysteresis-confirmed onset
+    ///    and Speaking → Idle on hysteresis-confirmed offset.
+    /// 4. While Speaking, forwards audio chunks to the STT backend
+    ///    via `feed(chunk)`. Partials emerge from the channel as
+    ///    they're produced.
+    /// 5. On `SpeechEnd`, calls `flush()` to surface the Final
+    ///    delta, then resets backend state for the next utterance.
+    ///
+    /// `samples` may be a finite slice (test fixture) or a streaming
+    /// iterator drained from a `cpal` ringbuf consumer. Call
+    /// `flush()` after the iterator drains to surface any tail
+    /// utterance the gate hadn't closed.
+    ///
+    /// Returns the number of completed utterances (SpeechEnd events
+    /// observed) for diagnostics.
+    pub fn run_vad_driven<I, V>(
+        &mut self,
+        samples: I,
+        vad: &mut V,
+        gate: &mut VadGate,
+    ) -> Result<u32, VoiceError>
+    where
+        I: IntoIterator<Item = f32>,
+        V: VadModel + ?Sized,
+    {
+        let chunk_size = vad.chunk_size();
+        let mut buffer: Vec<f32> = Vec::with_capacity(chunk_size);
+        let mut utterances = 0_u32;
+
+        for sample in samples {
+            buffer.push(sample);
+            if buffer.len() < chunk_size {
+                continue;
+            }
+            let probability = vad.predict(&buffer)?;
+
+            // Forward audio to the backend whenever the gate is in
+            // Speaking. We forward BEFORE observing the new chunk so
+            // a SpeechStart-causing chunk also reaches the backend.
+            let was_speaking = gate.is_speaking();
+            if was_speaking {
+                self.feed(&buffer)?;
+            }
+            match gate.observe(probability) {
+                Some(VadEvent::SpeechStart) => {
+                    // Forward the chunk that crossed the threshold;
+                    // it carries the onset of speech.
+                    self.feed(&buffer)?;
+                }
+                Some(VadEvent::SpeechEnd) => {
+                    // Drain the backend; emit the Final delta.
+                    self.flush()?;
+                    utterances += 1;
+                }
+                None => {}
+            }
+            buffer.clear();
+        }
+
+        Ok(utterances)
     }
 }

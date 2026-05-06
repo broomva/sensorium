@@ -19,22 +19,32 @@ serde_json = { workspace = true }
 thiserror = { workspace = true }
 chrono = { workspace = true }
 
-# v0.2 ships the trait + Mock + scaffolding. Real Parakeet inference
-# (parakeet-rs + ort + hf-hub + cpal + voice_activity_detector + ringbuf)
-# lands behind `feature = "parakeet"` in a follow-up PR. Same pattern
-# as pneuma-arcan-bridge: library shape first, real subprocess wiring
-# next.
+# Audio path (feature-gated so default builds stay dep-light).
+# - `cpal` is the canonical Rust cross-platform audio crate; CoreAudio
+#   on macOS, ALSA on Linux. Captures 16kHz f32 mono.
+# - `ringbuf` is a lock-free SPSC ring between the cpal callback
+#   (real-time audio thread) and the inference thread.
+# - `voice_activity_detector` wraps Silero VAD V5 via ONNX Runtime;
+#   ~1ms per 30ms chunk on CPU.
+cpal = { version = "0.17", optional = true }
+ringbuf = { version = "0.5", optional = true }
+voice_activity_detector = { version = "0.2", optional = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
 
 [features]
 default = []
+# Audio capture + VAD layer. Builds the cpal mic-capture pipeline,
+# the Silero V5 VAD gate, and the AudioCapture struct. Enables
+# `VoiceSession::start_audio`. Mock STT backend works against real
+# microphone audio when this is enabled (proves the wiring before
+# Parakeet ships).
+audio = ["dep:cpal", "dep:ringbuf", "dep:voice_activity_detector"]
 # Future: real Parakeet TDT EOU streaming inference via parakeet-rs +
-# ort + hf-hub. Enabling this feature pulls in cpal, ringbuf,
-# voice_activity_detector, parakeet-rs, hf-hub. Land in v0.3 when the
-# weight-bootstrap + audio-capture wiring is ready.
-parakeet = []
+# ort + hf-hub. `parakeet` implies `audio` because Parakeet needs the
+# audio pipeline to feed it.
+parakeet = ["audio"]
 
 [lints.rust]
 missing_docs = "warn"

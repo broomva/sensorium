@@ -12,9 +12,9 @@ Sensorium turns world observations into typed `PrimitiveToken` streams and a que
 | [`sensorium-core`](crates/sensorium-core) | Substrate types — `WorkspaceContext`, `WorkspaceSnapshot`, `PrimitiveToken`, `Tagged<T>`, privacy markers, ring buffer, calibrated provenance. No I/O. | 81 |
 | [`sensorium-context`](crates/sensorium-context) | Pull-based `Observer` trait + `ManualObserver` (tests/demos) + `FsObserver` (notify-based, real-world tokens). Phase 1.1. | 13 |
 | [`sensorium-context-macos`](crates/sensorium-context-macos) | macOS workspace observer — polls `NSWorkspace` for the frontmost application. Step #15. | 4 + 1 ignored |
-| [`sensorium-voice`](crates/sensorium-voice) | Voice-input substrate — `SpeechToText` trait + `MockStt` + `VoiceSession`. Step #17. Real Parakeet TDT (EOU streaming) inference lands in a follow-up behind `feature = "parakeet"`. | 9 |
+| [`sensorium-voice`](crates/sensorium-voice) | Voice-input substrate — `SpeechToText` trait + `MockStt` + `VoiceSession` + VAD layer (`VadModel` + `MockVad` + `SileroVad` + `VadGate`). Step #17. `feature = "audio"` adds cpal mic capture + Silero V5 VAD; `feature = "parakeet"` (deferred) adds Parakeet TDT EOU inference. | 28 (+ 2 with `audio`, +1 ignored mic) |
 
-**Total tests:** 107 · 2 ignored (interactive) · all green on `cargo test --workspace`.
+**Total tests:** 126 · 2 ignored (interactive) · all green on `cargo test --workspace`.
 
 Future Phase-1.2+ crates (not yet built): `sensorium-context-macos` (NSWorkspace +
 Accessibility API), `sensorium-vision` (MediaPipe / WiLoR), `sensorium-voice`
