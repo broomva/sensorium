@@ -11,42 +11,17 @@
 //!
 //! Properties under test (with `--features audio`):
 //!
-//! 1. `SileroVad::new()` constructs without panicking.
-//! 2. `SileroVad` flags 1s of synthetic silence as low-probability
-//!    (smoke check; we don't depend on a specific value).
-//! 3. (`#[ignore]`'d) `AudioCapture::start` opens the default mic,
+//! 1. (`#[ignore]`'d) `AudioCapture::start` opens the default mic,
 //!    streams ~1s, and the consumer drains real samples.
+//!
+//! `EnergyVad` and `VadGate` tests live in `vad_gate.rs` (always built).
 
 #![cfg(feature = "audio")]
 
 use std::time::Duration;
 
 use ringbuf::traits::Consumer;
-use sensorium_voice::{AudioCapture, AudioCaptureConfig, SileroVad, VadModel};
-
-#[test]
-fn silero_vad_constructs() {
-    let vad = SileroVad::new();
-    assert!(vad.is_ok(), "Silero V5 model must construct");
-    let v = vad.unwrap();
-    assert_eq!(v.sample_rate(), 16_000);
-    assert_eq!(v.chunk_size(), 512);
-}
-
-#[test]
-fn silero_vad_handles_silence_chunk() {
-    let mut vad = SileroVad::new().unwrap();
-    let chunk = vec![0.0_f32; 512];
-    let p = vad.predict(&chunk).expect("predict");
-    // We don't assert a specific value — Silero V5 is a real model
-    // and we don't want to hard-code its behavior. Just smoke-check
-    // that the call succeeds and returns a finite probability.
-    assert!(p.is_finite(), "probability must be finite, got {p}");
-    assert!(
-        (0.0..=1.0).contains(&p),
-        "probability must be in [0,1], got {p}"
-    );
-}
+use sensorium_voice::{AudioCapture, AudioCaptureConfig};
 
 /// Live-mic test. Requires a working input device and macOS
 /// permission to access the microphone for the test runner. Skipped
