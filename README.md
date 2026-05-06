@@ -11,8 +11,9 @@ Sensorium turns world observations into typed `PrimitiveToken` streams and a que
 |---|---|---|
 | [`sensorium-core`](crates/sensorium-core) | Substrate types — `WorkspaceContext`, `WorkspaceSnapshot`, `PrimitiveToken`, `Tagged<T>`, privacy markers, ring buffer, calibrated provenance. No I/O. | 81 |
 | [`sensorium-context`](crates/sensorium-context) | Pull-based `Observer` trait + `ManualObserver` (tests/demos) + `FsObserver` (notify-based, real-world tokens). Phase 1.1. | 13 |
+| [`sensorium-context-macos`](crates/sensorium-context-macos) | macOS workspace observer — polls `NSWorkspace` for the frontmost application. Step #15. | 4 + 1 ignored |
 
-**Total tests:** 94 · all green on `cargo test --workspace`.
+**Total tests:** 98 · 2 ignored (interactive) · all green on `cargo test --workspace`.
 
 Future Phase-1.2+ crates (not yet built): `sensorium-context-macos` (NSWorkspace +
 Accessibility API), `sensorium-vision` (MediaPipe / WiLoR), `sensorium-voice`
