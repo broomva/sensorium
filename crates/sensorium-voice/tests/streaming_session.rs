@@ -83,7 +83,10 @@ fn legacy_tokens_channel_still_fires_alongside_streaming() {
     }
 
     let stream_update = streaming.try_recv().expect("streaming channel must fire");
-    assert_eq!(stream_update.value().map(TranscriptDelta::text), Some("hello"));
+    assert_eq!(
+        stream_update.value().map(TranscriptDelta::text),
+        Some("hello")
+    );
     assert!(stream_update.is_final());
 }
 
