@@ -24,7 +24,7 @@
 //! - Test the substrate model in isolation, with hand-built `WorkspaceContext`
 //!   instances, before any sensor is wired.
 //!
-//! ## The five load-bearing types
+//! ## The load-bearing types
 //!
 //! 1. [`WorkspaceContext`] — the cheaply-cloneable, structurally-shared
 //!    substrate. `Arc`-backed so taking a snapshot is `O(1)`.
@@ -39,6 +39,12 @@
 //! 5. [`PrivacyTier`] / [`LocalOnly`] — privacy as a structural property, not a
 //!    runtime check. The substrate is local-only by hard architectural
 //!    requirement; `LocalOnly<T>` makes that visible to the type system.
+//! 6. [`StreamUpdate`] / [`Generation`] — the streaming substrate. Every
+//!    real-time producer (voice STT, BCI, gaze) emits `StreamUpdate<T>` along
+//!    a stream, tagging each `Partial`, `Final`, or `Cancelled` event with
+//!    a [`Generation`] so downstream stages can speculatively consume
+//!    partials and cleanly drop work when a generation is revised or
+//!    cancelled.
 //!
 //! ## Cross-crate compatibility with `pneuma-core`
 //!
@@ -66,6 +72,7 @@ pub mod attention;
 pub mod biometric;
 pub mod entity;
 pub mod error;
+pub mod generation;
 pub mod posture;
 pub mod primitive;
 pub mod privacy;
@@ -73,6 +80,7 @@ pub mod provenance;
 pub mod ring;
 pub mod sensor;
 pub mod state;
+pub mod stream;
 pub mod time;
 pub mod token;
 pub mod workspace;
@@ -85,6 +93,7 @@ pub use entity::{
     AppId, FileRef, MimeType, SelectionRef, SymbolRef, TextSpan, Uri, WindowId, WindowRect,
 };
 pub use error::{Result, SensoriumError};
+pub use generation::{Generation, GenerationSeq};
 pub use posture::{Posture, PostureSnapshot, PresenceLevel};
 pub use primitive::PrimitiveKind;
 pub use privacy::{LocalOnly, PrivacyTier, Redacted, RedactionReason};
@@ -92,6 +101,7 @@ pub use provenance::{Provenance, Tagged};
 pub use ring::RingBuffer;
 pub use sensor::{Calibration, CalibrationStatus, SensorId, SensorKind, SensorMetadata};
 pub use state::{CognitiveLoad, UserState};
+pub use stream::StreamUpdate;
 pub use time::{Monotonic, Timestamp};
 pub use token::{ApprovalEvent, AttentionEvent, ModulationEvent, PrimitiveToken, RelationEvent};
 pub use workspace::{
