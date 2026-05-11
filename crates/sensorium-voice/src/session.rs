@@ -23,7 +23,7 @@
 
 use std::sync::mpsc;
 
-use sensorium_core::{PrimitiveToken, SensorId};
+use sensorium_core::{Generation, GenerationSeq, PrimitiveToken, SensorId, StreamUpdate};
 
 use crate::backend::{SpeechToText, TranscriptDelta};
 use crate::config::{Backend, VoiceConfig};
@@ -33,9 +33,17 @@ use crate::vad::{VadEvent, VadGate, VadModel};
 
 /// Voice-input session.
 ///
-/// Holds an STT backend + an outbound channel for `PrimitiveToken`s.
-/// Caller drives it explicitly via `feed` / `flush` (v0.2) or via
-/// the cpal-driven background thread (v0.3, behind feature flag).
+/// Holds an STT backend, two outbound channels — the legacy
+/// `PrimitiveToken::Predication` stream for callers that just want
+/// the text, and the generation-tagged `StreamUpdate<TranscriptDelta>`
+/// stream for downstream stages that compose on speculative
+/// generations — and a per-session monotonic [`GenerationSeq`].
+///
+/// One utterance corresponds to one generation. The session mints a
+/// fresh generation on the first delta of an utterance (on the first
+/// `feed()` call after construction, after `flush()`, or after
+/// `cancel()`), and emits `StreamUpdate::Final` (or `Cancelled`) with
+/// that generation when the utterance closes.
 pub struct VoiceSession {
     backend: Box<dyn SpeechToText>,
     label: String,
@@ -43,8 +51,21 @@ pub struct VoiceSession {
     /// emitted token's provenance so downstream consumers can
     /// distinguish concurrent sessions.
     sensor: SensorId,
+    /// Legacy `PrimitiveToken` channel (kept for backward compat with
+    /// callers like `pneuma-demo` that consume bare text).
     token_tx: mpsc::Sender<PrimitiveToken>,
     token_rx: Option<mpsc::Receiver<PrimitiveToken>>,
+    /// Generation-tagged streaming channel — the substrate primitive
+    /// downstream stages compose on.
+    stream_tx: mpsc::Sender<StreamUpdate<TranscriptDelta>>,
+    stream_rx: Option<mpsc::Receiver<StreamUpdate<TranscriptDelta>>>,
+    /// Monotonic generation minter for this session.
+    gen_seq: GenerationSeq,
+    /// The generation owning the *current* utterance, if any. `None`
+    /// when the session is idle (before first feed, or after
+    /// flush/cancel). Minted lazily on the first delta of an
+    /// utterance.
+    current_generation: Option<Generation>,
 }
 
 impl VoiceSession {
@@ -76,43 +97,121 @@ impl VoiceSession {
         let label = backend.label().to_owned();
         let sensor = SensorId::new();
         let (token_tx, token_rx) = mpsc::channel();
+        let (stream_tx, stream_rx) = mpsc::channel();
         Ok(Self {
             backend,
             label,
             sensor,
             token_tx,
             token_rx: Some(token_rx),
+            stream_tx,
+            stream_rx: Some(stream_rx),
+            gen_seq: GenerationSeq::new(),
+            current_generation: None,
         })
     }
 
-    /// Take ownership of the token receiver. Subsequent calls return
-    /// `None`.
+    /// Take ownership of the legacy `PrimitiveToken` receiver.
+    /// Subsequent calls return `None`.
+    ///
+    /// Emits `PrimitiveToken::Predication` for every `Partial` /
+    /// `Final` delta from the backend — same shape as before B2.
+    /// Callers that only need bare text continue to use this; callers
+    /// that need generation tagging use [`Self::streaming_tokens`].
     pub fn tokens(&mut self) -> Option<mpsc::Receiver<PrimitiveToken>> {
         self.token_rx.take()
     }
 
+    /// Take ownership of the generation-tagged `StreamUpdate` receiver.
+    /// Subsequent calls return `None`.
+    ///
+    /// Emits `StreamUpdate<TranscriptDelta>` for every delta the
+    /// backend produces, with the generation owning the current
+    /// utterance. A `Partial` delta surfaces as
+    /// `StreamUpdate::Partial`; a `Final` delta as `StreamUpdate::Final`;
+    /// calling [`Self::cancel`] surfaces `StreamUpdate::Cancelled`.
+    ///
+    /// Downstream stages (resolver, Arcan, TTS) compose on this
+    /// channel — they tag derived work with the generation and can
+    /// cleanly drop it on `Cancelled` or supersession.
+    pub fn streaming_tokens(&mut self) -> Option<mpsc::Receiver<StreamUpdate<TranscriptDelta>>> {
+        self.stream_rx.take()
+    }
+
+    /// The generation owning the current utterance, if any.
+    ///
+    /// `None` when the session is idle (before first feed, after
+    /// flush, or after cancel). `Some(g)` between the first delta of
+    /// an utterance and the `Final` / `Cancelled` that closes it.
+    #[must_use]
+    pub fn current_generation(&self) -> Option<Generation> {
+        self.current_generation
+    }
+
     /// Feed an audio chunk to the backend. Drops the chunk on the
-    /// floor for v0.2's mock backend; real backends inspect it.
+    /// floor for the mock backend; real backends inspect it.
     ///
     /// Emits `Partial` deltas as they arrive from the backend (some
     /// backends only emit on `flush`). Callers see the deltas as
-    /// `PrimitiveToken::Predication` tokens on the receiver returned
-    /// by [`Self::tokens`].
+    /// `PrimitiveToken::Predication` tokens on the legacy channel
+    /// [`Self::tokens`], AND as `StreamUpdate::Partial` updates on the
+    /// streaming channel [`Self::streaming_tokens`].
+    ///
+    /// The first `feed()` of an utterance mints a fresh generation
+    /// from the session's [`GenerationSeq`]; subsequent feeds in the
+    /// same utterance reuse it until `flush()` or `cancel()` closes
+    /// the utterance.
     pub fn feed(&mut self, chunk: &[f32]) -> Result<(), VoiceError> {
         if let Some(delta) = self.backend.transcribe_chunk(chunk)? {
-            self.emit(&delta);
+            let generation = self.ensure_generation();
+            self.emit_legacy(&delta);
+            self.emit_streaming(StreamUpdate::Partial {
+                generation,
+                value: delta,
+            });
+        } else {
+            // Even when the backend emits nothing, the first feed of
+            // an utterance establishes the generation so `cancel()` /
+            // `current_generation()` see the right value.
+            let _ = self.ensure_generation();
         }
         Ok(())
     }
 
     /// Signal end-of-utterance. Backends use this to produce a
-    /// `Final` delta. The session emits it as a token and resets
-    /// the backend for the next utterance.
+    /// `Final` delta. The session emits it on both channels, resets
+    /// the backend, and clears the current generation.
+    ///
+    /// If no generation has been minted yet (no prior `feed`), this
+    /// flush will still mint one for the `Final` delta — the
+    /// utterance was zero-duration but real.
     pub fn flush(&mut self) -> Result<(), VoiceError> {
         if let Some(delta) = self.backend.flush()? {
-            self.emit(&delta);
+            let generation = self.ensure_generation();
+            self.emit_legacy(&delta);
+            self.emit_streaming(StreamUpdate::Final {
+                generation,
+                value: delta,
+            });
         }
         self.backend.reset();
+        self.current_generation = None;
+        Ok(())
+    }
+
+    /// Abandon the current utterance — barge-in path.
+    ///
+    /// If a generation is active, emits
+    /// `StreamUpdate::Cancelled { generation }` so downstream stages
+    /// can drop pending speculative work tagged with it. Resets the
+    /// backend and clears the active generation.
+    ///
+    /// Idempotent / no-op when the session is idle.
+    pub fn cancel(&mut self) -> Result<(), VoiceError> {
+        if let Some(generation) = self.current_generation.take() {
+            self.emit_streaming(StreamUpdate::Cancelled { generation });
+            self.backend.reset();
+        }
         Ok(())
     }
 
@@ -122,15 +221,30 @@ impl VoiceSession {
         &self.label
     }
 
-    fn emit(&self, delta: &TranscriptDelta) {
-        // v0.2 emits both Partial and Final deltas as separate
-        // tokens. The consumer (pneuma-demo) can choose to render
-        // partials as live preview and consume Final as the
-        // utterance to bind into a directive.
+    /// Mint a generation lazily on first delta of an utterance.
+    fn ensure_generation(&mut self) -> Generation {
+        if let Some(g) = self.current_generation {
+            return g;
+        }
+        let g = self.gen_seq.advance();
+        self.current_generation = Some(g);
+        g
+    }
+
+    fn emit_legacy(&self, delta: &TranscriptDelta) {
+        // Legacy contract: emit Partial and Final deltas as separate
+        // tokens. The consumer (pneuma-demo) renders partials as live
+        // preview and consumes Final as the utterance to bind into a
+        // directive.
         let token = predication_token(delta.text().to_owned(), self.sensor);
         // Best-effort send. If the receiver was dropped, the token
         // is silently lost — caller's choice not to listen.
         let _ = self.token_tx.send(token);
+    }
+
+    fn emit_streaming(&self, update: StreamUpdate<TranscriptDelta>) {
+        // Best-effort send. Same drop semantics as the legacy channel.
+        let _ = self.stream_tx.send(update);
     }
 
     /// The session's stable `SensorId`. Recorded in every emitted
