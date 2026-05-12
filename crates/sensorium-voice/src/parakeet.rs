@@ -106,15 +106,16 @@ impl SpeechToText for ParakeetStt {
                 .model
                 .transcribe(&chunk, false)
                 .map_err(|e| VoiceError::Inference(format!("{e}")))?;
-            if !text.is_empty() {
-                self.accumulated.push_str(&text);
+            let detokenized = detokenize_sentencepiece(&text);
+            if !detokenized.is_empty() {
+                self.accumulated.push_str(&detokenized);
                 grew = true;
             }
         }
         if grew && self.accumulated.len() != self.last_emitted_len {
             self.last_emitted_len = self.accumulated.len();
             Ok(Some(TranscriptDelta::Partial {
-                text: self.accumulated.clone(),
+                text: self.accumulated.trim().to_owned(),
             }))
         } else {
             Ok(None)
@@ -130,7 +131,7 @@ impl SpeechToText for ParakeetStt {
                 .model
                 .transcribe(&chunk, false)
                 .map_err(|e| VoiceError::Inference(format!("{e}")))?;
-            self.accumulated.push_str(&text);
+            self.accumulated.push_str(&detokenize_sentencepiece(&text));
         }
         // Drain the model's internal state with 3 zero-chunks (per
         // the parakeet-rs streaming example).
@@ -140,8 +141,9 @@ impl SpeechToText for ParakeetStt {
                 .model
                 .transcribe(&zeros, false)
                 .map_err(|e| VoiceError::Inference(format!("{e}")))?;
-            if !text.is_empty() {
-                self.accumulated.push_str(&text);
+            let detokenized = detokenize_sentencepiece(&text);
+            if !detokenized.is_empty() {
+                self.accumulated.push_str(&detokenized);
             }
         }
         let final_text = self.accumulated.trim().to_owned();
@@ -165,6 +167,30 @@ impl SpeechToText for ParakeetStt {
     fn label(&self) -> &str {
         &self.label
     }
+}
+
+// --- SentencePiece detokenization -------------------------------------------
+
+/// Convert Parakeet's raw SentencePiece-tokenized output into a
+/// human-readable string.
+///
+/// Parakeet TDT EOU emits text through a SentencePiece-style
+/// byte-pair-encoding tokenizer. Tokens that begin a word are
+/// prefixed with the special "lower one eighth block" character
+/// `▁` (U+2581) — the SentencePiece convention. So a raw chunk
+/// output like `"▁rename▁it"` represents the spoken phrase
+/// `" rename it"`.
+///
+/// Without detokenization the partials surface as
+/// `▁rename▁it▁to▁alpha`, which:
+///   1. looks broken to end-users;
+///   2. breaks any downstream parser that expects whitespace
+///      between words (e.g. `pneuma-demo::parse_utterance`).
+///
+/// We map `▁` → space; the caller trims the result if it wants
+/// to strip the leading space that a leading `▁` introduces.
+fn detokenize_sentencepiece(text: &str) -> String {
+    text.replace('\u{2581}', " ")
 }
 
 // --- Weight bootstrap ------------------------------------------------------
@@ -217,4 +243,63 @@ fn ensure_weights(dir: &Path) -> Result<(), VoiceError> {
         })?;
     }
     Ok(())
+}
+
+// --- Tests -----------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::detokenize_sentencepiece;
+
+    #[test]
+    fn detokenize_empty_string_is_empty() {
+        assert_eq!(detokenize_sentencepiece(""), "");
+    }
+
+    #[test]
+    fn detokenize_pure_ascii_is_unchanged() {
+        assert_eq!(detokenize_sentencepiece("hello world"), "hello world");
+    }
+
+    #[test]
+    fn detokenize_single_word_with_leading_marker() {
+        assert_eq!(detokenize_sentencepiece("\u{2581}rename"), " rename");
+    }
+
+    #[test]
+    fn detokenize_multiple_words_with_markers() {
+        // Mirrors the actual Parakeet output we observed in live
+        // dogfood: `▁rename▁it▁to▁alpha` → ` rename it to alpha`.
+        assert_eq!(
+            detokenize_sentencepiece("\u{2581}rename\u{2581}it\u{2581}to\u{2581}alpha"),
+            " rename it to alpha"
+        );
+    }
+
+    #[test]
+    fn detokenize_token_with_internal_marker_only_at_word_start() {
+        // BPE may split words mid-token; the `▁` only appears at word
+        // boundaries (it's the start-of-word marker, not an internal
+        // separator). We translate every occurrence regardless,
+        // which is the right behavior for any token sequence the
+        // model produces.
+        assert_eq!(detokenize_sentencepiece("re\u{2581}name"), "re name");
+    }
+
+    #[test]
+    fn detokenize_punctuation_is_preserved() {
+        assert_eq!(
+            detokenize_sentencepiece("\u{2581}hello,\u{2581}world!"),
+            " hello, world!"
+        );
+    }
+
+    #[test]
+    fn detokenize_trim_after_detokenize_gives_clean_phrase() {
+        // The combination that callers actually use: detokenize +
+        // trim → clean human-readable phrase.
+        let raw = "\u{2581}opens\u{2581}safari\u{2581}rename\u{2581}it\u{2581}to\u{2581}alpha";
+        let cleaned = detokenize_sentencepiece(raw).trim().to_owned();
+        assert_eq!(cleaned, "opens safari rename it to alpha");
+    }
 }
