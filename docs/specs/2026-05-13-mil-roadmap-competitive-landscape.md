@@ -5,11 +5,13 @@
 **Scope**: Maps the May 2026 voice / pointer / multimodal-input agent landscape and turns the gaps into a 9-month MIL roadmap with concrete crates, backends, and product surfaces.
 **Method**: Six parallel research waves dispatched 2026-05-13. Source bibliography embedded inline per axis. ~16,000 words of raw research distilled.
 
+**Amendment 2026-05-13 (afternoon)**: Added Track R (Cognitive Stream Output) + Axis 7 (Output / Temporal cognition) covering RSVP and adaptive-pacing literature plus the agent-OS-as-cognitive-stream framing. Detail in §3.7 and §6.R.
+
 ## TL;DR
 
 MIL has shipped its streaming substrate end-to-end (B1–B4, 5 PRs, all green). The competitive landscape has converged on **two dominant architectures that share one weakness**: cloud-blob voice agents (OpenAI Realtime-2, Gemini Live, Hume EVI) and composed open-source pipelines (LiveKit Agents, Pipecat). Neither side ships a **typed agent contract** that downstream programs reason over. Every shipping product treats voice output as opaque text or pixel coordinates. Apple App Intents is the closest typed-deictic-substrate in production, but Apple owns the runtime+OS+index.
 
-**MIL's wedge is the cross-vendor portable typed substrate.** The strategy is the same one Spec E makes at the silicon layer: own the contract, let backends compete underneath. Concretely this means seven roadmap tracks:
+**MIL's wedge is the cross-vendor portable typed substrate.** The strategy is the same one Spec E makes at the silicon layer: own the contract, let backends compete underneath. Concretely this means eight roadmap tracks:
 
 | Track | Scope | Window |
 |---|---|---|
@@ -19,6 +21,7 @@ MIL has shipped its streaming substrate end-to-end (B1–B4, 5 PRs, all green). 
 | **V** | Vision substrate (`sensorium-vision` + ScreenCaptureKit + Moondream 3 + Florence-2 + VLM-as-backend) | 2026 Q4-2027 Q1 |
 | **N** | Non-voice modalities (`sensorium-hands` Mediapipe MVP → `sensorium-gaze` Tobii → `sensorium-arkit` Vision Pro) | 2026 Q4-2027 Q2 |
 | **P** | Provenance / cryptographic trust (Ed25519 signing, audit-trail UX, replayable sessions) | 2026 Q4 |
+| **R** | **Cognitive Stream Output** (`prosopon-core` CognitiveEvent substrate + Arcan bridge + adaptive pacing engine) — dual of MIL input, feeds Prosopon RSVP/spatial/audio compositors | 2026 Q4-2027 Q1 |
 | **G** | Product surfaces on top (live-realtime demo polish, Pointer SDK, voice keyboard firmware) | 2027 |
 
 The decisive insight: the first system to ship **typed-on-device substrate with cryptographic provenance** is competing in a different category than any of them — closer to a **Yubico USB security key** than to a lapel mic, closer to **CUDA** than to a cloud LLM. That's the bet.
@@ -73,7 +76,7 @@ Each agent returned a summary table + per-product detail + synthesis (~1.5-2k wo
 
 ---
 
-## 3. The Landscape — Six Axes
+## 3. The Landscape — Seven Axes
 
 ### Axis 1: HW voice peripherals & wearables
 
@@ -278,6 +281,82 @@ The Neurable / Cognixion / Naqi / Wisear OEM-licensing path means a `sensorium-b
 
 **Decisive insight**: **`cartesia-one/csm.rs` is a production-quality Rust Candle implementation of Sesame CSM with Metal/CUDA backends.** That's drop-in for `sensorium-speech`. We don't write from scratch.
 
+### Axis 7: Output / Temporal cognition (RSVP, cognitive stream surfaces)
+
+The first six axes cover MIL's *input* direction (voice, gesture, gaze, pointer, screen pixels, on-device models). This seventh axis covers the **output direction** — how an agent OS surfaces its state to a human at the rhythm of work, not as a chat box or a dashboard.
+
+The motivating insight (user framing, 2026-05-13): *agent OS state is too large to display spatially. RSVP — Rapid Serial Visual Presentation — streams the right slice of state at the right speed.* Treat reading not as spatial navigation but as a **temporal cognitive stream**.
+
+**Key research findings**:
+
+| Finding | Source | Design implication |
+|---|---|---|
+| Comprehension drops above ~350 wpm | [PLOS One 2016 (RSVP speed-comprehension trade)](https://journals.plos.org/plosone/article?id=10.1371/journal.pone.0153786) | Default rate cap; let Risk events slow further |
+| Eliminating regressions hurts comprehension on technical material | [Schotter, Tran, Rayner (Spritz study)](https://www.sciencedirect.com/science/article/abs/pii/S0747563214007663) | RSVP must support rewind + mode-switch out to spatial for code/math/diagrams |
+| **Adaptive RSVP reduces task load** while preserving the 33% speed gain | [Öquist & Goldstein 2001-03](https://link.springer.com/chapter/10.1007/3-540-45756-9_18) | The adaptive variant is what we ship, not fixed-rate |
+| EEG theta-alpha ratio predicts reading engagement; dynamic pacing possible | [Vortmann et al. CHI 2020](https://dl.acm.org/doi/fullHtml/10.1145/3313831.3376766) | Future hook for `sensorium-bci` (Track N, 2027+) |
+| ADHD populations benefit by ~13% over neurotypical controls | [PLOS One 2016](https://journals.plos.org/plosone/article?id=10.1371/journal.pone.0153786) | Real accessibility wedge; ADHD-friendly mode flag |
+| Sonified RSVP (paired voice + text) is unexplored research territory | [Goncu & Marriott 2003](https://link.springer.com/chapter/10.1007/3-540-36572-9_39) | Pairs cleanly with our Track T Sesame CSM TTS |
+| RSVP-based BCIs achieve ~30 wpm communication via SSVEP | [IOPscience RSVP-BCI review](https://iopscience.iop.org/article/10.1088/1741-2552/aa9817) | Connects RSVP to accessibility / `sensorium-bci` |
+
+**Reference hardware**: [RSVP Nano](https://github.com/search?q=rsvp+nano+esp32) — open-source ESP32-S3 + Waveshare 3.49" Touch LCD (640×172 IPS) with a browser-based firmware flasher. ~$30 hardware target. Document pipeline: EPUB / TXT / MD / HTML → tokenizer → pacing metadata → `.rsvp` stream → realtime render loop. Compact, pocketable, ESP32-class.
+
+**Where this maps onto MIL/Prosopon architecture**:
+
+RSVP is *not* a MIL extension — MIL is the input direction. RSVP belongs to the existing **[Prosopon](https://linear.app/broomva/project/prosopon-display-server-for-agents-b75c23a05005)** project (`Pneuma<L0ToExternal>`, "one IR, many compositors"). The bridge between MIL and Prosopon is what lives in MIL's **Track R**:
+
+```
+Agent loop (Arcan)
+  → emits typed CognitiveEvent (R1)
+  → MIL→Prosopon bridge (R2)
+  → Adaptive pacing engine (R3)
+  → Prosopon dispatcher routes to compositor:
+      - RSVP text (Pr-RSVP-1, web/Tauri + Pr-RSVP-2 ESP32-S3)
+      - Spatial panel (code/diagrams/tables)
+      - Audio (sonified — composes with Track T CSM TTS)
+      - Paused (waits on user input)
+```
+
+**`CognitiveEvent` is the output-direction dual of MIL's `PrimitiveToken`**. Same disciplined typing principle, opposite direction:
+
+```rust
+pub enum CognitiveEvent {
+    Observation { priority, text, source, ts },
+    Hypothesis { confidence, text, evidence },
+    Action { tool, text, status, generation },
+    Risk { severity, text, blast_radius },
+    ApprovalRequest { options, text, default, deadline },
+    Result { status, text, directive },
+    Pause { reason, text },
+    Continue { momentum },
+}
+```
+
+Same `Generation` (cancellation propagates symmetrically with input), same `StreamUpdate<T>` wrapper, same `Tagged<T>` provenance. **The B1 substrate primitives serve both halves of the cognitive loop.**
+
+**Mode-switching is the killer feature** that distinguishes agent-OS RSVP from speed-reading RSVP. Typed-match on payload: code blocks / equations / multi-entity graphs trigger an exit-RSVP into spatial render. Per-event routing, no general AI inference required — just discriminant on the event payload + small regex/parse heuristics + (stretch) Moondream 3 grounding from V2.
+
+**Symmetry table** — the validation that the architecture is correctly factored:
+
+| MIL substrate (input) | Prosopon substrate (output) |
+|---|---|
+| `sensorium-core::PrimitiveToken` | `prosopon-core::CognitiveEvent` |
+| `sensorium-voice::ParakeetStt` | `prosopon-rsvp::RsvpCompositor` |
+| `sensorium-vision::ScreenCapture` | `prosopon-spatial::SpatialCompositor` |
+| `sensorium-speech::CsmTts` | `prosopon-audio::AudioCompositor` (composes with T2) |
+| `sensorium-hands::Mediapipe` | `prosopon-haptic::HapticCompositor` (future) |
+| `Generation` + `StreamUpdate<T>` | Same primitives, opposite direction |
+| `Tagged<T>` + `Provenance` | Same primitives, opposite direction |
+| Cancelled barge-in (C2) | Compositor pause on attention loss (gaze leaves screen via N2) |
+| Speculative parse on Partial (B4) | Speculative rendering on partial directive composition |
+| Voice → directive substrate | Directive → cognitive event substrate |
+
+The "three loops" decomposition makes this concrete:
+
+1. **Agent loop** (Arcan, exists) — state evolves, events emitted
+2. **Pacing loop** (R3 new) — reads CognitiveEvent + density score → emits PacedChunk with mode
+3. **Render loop** (Prosopon compositor) — drives display at 60 Hz from PacedChunks
+
 ---
 
 ## 4. What the Landscape Tells Us
@@ -323,7 +402,7 @@ and the on-device sovereign for everything cloud-blob vendors lock to their GPUs
 
 ---
 
-## 6. Roadmap — Seven Tracks
+## 6. Roadmap — Eight Tracks
 
 Each track is a Linear umbrella ticket with sub-tickets. Sequencing follows dependency order; parallel tracks marked.
 
@@ -408,6 +487,27 @@ Each track is a Linear umbrella ticket with sub-tickets. Sequencing follows depe
 
 **Critical path**: P1 → P2 → P3. Sets up the "Yubico for AI input" positioning. ~3 weeks.
 
+### Track R — Cognitive Stream Output
+
+**Goal**: bridge MIL's typed input substrate to the output side. Define the typed event surface (`CognitiveEvent`) that the Arcan agent loop emits at every directive transition, build the adaptive pacing engine that scores each event for complexity, and hand the resulting `PacedChunk` stream to Prosopon compositors (RSVP / spatial / audio).
+
+**Strategic frame**: agent OS state is too large for spatial dashboards or chat boxes. The temporal cognitive stream is the third option, validated by Adaptive RSVP research (Öquist & Goldstein) and the agent-OS framing above (§3.7).
+
+| Ticket | Scope | Acceptance |
+|---|---|---|
+| **R1** | `prosopon-core::CognitiveEvent` typed substrate — output-direction dual of `PrimitiveToken`. 8 variants (Observation / Hypothesis / Action / Risk / ApprovalRequest / Result / Pause / Continue). Generation-tagged, provenance-aware, serializable for BLE/WS/IPC. | Crate scaffolded, ≥15 unit tests covering taxonomy + generation propagation + serde + provenance. fmt + clippy clean. |
+| **R2** | MIL → Prosopon bridge — Arcan emits `CognitiveEvent` at every directive state transition + tool call + risk gate + approval point. Tagged with the originating MIL `Generation` so `Cancelled(g)` propagates symmetrically. Reuses C3 (BRO-1090) Lago event infrastructure. | A complete `Directive<Composing → Ready → Proposed → Committed>` lifecycle produces a matching, generation-consistent `Stream<CognitiveEvent>`. |
+| **R3** | Adaptive pacing engine — reads each `CognitiveEvent` payload + content density, emits `PacedChunk { text, hold_ms, mode: Rsvp \| Spatial \| Audio \| Paused }`. Mode-switches on code/math/diagrams. Defaults: 350 wpm baseline, 200 wpm for Risk/Severe, 700 wpm for low-priority Observations. ADHD-friendly flag clamps eye-movement constraints. | Pacer matches research baselines on benchmark corpus. ≥20 pacing-scenario tests. fmt + clippy clean. |
+
+**Critical path**: R1 → R2 → R3. ~4 weeks for one engineer.
+
+**Cross-project**: The RSVP compositor itself + ESP32-S3 firmware + mode-switching dispatcher + sonified-RSVP work lives in the existing [Prosopon — Display Server for Agents](https://linear.app/broomva/project/prosopon-display-server-for-agents-b75c23a05005) project. Four Prosopon-side tickets:
+
+- **Pr-RSVP-1** — Reference RSVP text compositor (web/Tauri target) with Optimal Recognition Point (ORP) marker, variable-rate display, user controls (pause/resume/rewind/multiplier).
+- **Pr-RSVP-2** — ESP32-S3 firmware (fork of [RSVP Nano](https://github.com/search?q=rsvp+nano+esp32) for Waveshare 3.49" Touch LCD, 640×172 IPS). Subscribes to MIL `Stream<PacedChunk>` over BLE GATT. Capacitive-touch controls: tap pause, swipe rewind. SD-card fallback for offline `.rsvp` streams. Sibling MCU family to MIL G3 voice keyboard firmware.
+- **Pr-RSVP-3** — Mode-switching dispatcher (RSVP ↔ spatial ↔ audio compositor selection from `PacedChunk.mode`). Smooth handoff with 100ms fade.
+- **Pr-RSVP-4** — Sonified RSVP — pair the text compositor with Sesame CSM TTS (Track T BRO-1092) so voice cadence matches text cadence. Novel research direction (Goncu & Marriott 2003 only prior published exploration).
+
 ### Track G — Product surfaces on top of MIL
 
 **Goal**: ship visible products that consume the substrate, so the substrate has a clear adoption story.
@@ -431,7 +531,7 @@ Each track is a Linear umbrella ticket with sub-tickets. Sequencing follows depe
 
 **Umbrella ticket**: "Spec H — Multimodal Intent Contract & 2026-Q3 Roadmap". References this spec doc. Spawns the per-track sub-tickets.
 
-**Sub-ticket count**: ~22 actionable sub-tickets across 7 tracks:
+**Sub-ticket count**: 33 actionable sub-tickets across 8 tracks (30 MIL + 3 R-track that bridge to Prosopon; plus 4 cross-project Prosopon tickets):
 
 | Track | Sub-tickets |
 |---|---|
@@ -441,13 +541,16 @@ Each track is a Linear umbrella ticket with sub-tickets. Sequencing follows depe
 | V | 5 (V1 capture, V2 Moondream, V3 Florence, V4 adapter, V5 resolver bridge) |
 | N | 3 active (N1 Mediapipe, N2 Tobii, N3 ARKit; N4 placeholder for 2027+) |
 | P | 3 (Ed25519 signing, audit-trail viewer, replay bundle) |
+| R | 3 (R1 CognitiveEvent substrate, R2 Arcan emitter bridge, R3 adaptive pacing engine) |
 | G | 4 (G1 video demo, G2 Pointer SDK, G3 keyboard firmware, G4 App Intents bridge) |
+
+**Cross-project (Prosopon)**: 4 additional tickets (Pr-RSVP-1..4) under the [Prosopon — Display Server for Agents](https://linear.app/broomva/project/prosopon-display-server-for-agents-b75c23a05005) project — RSVP text compositor (web/Tauri), ESP32-S3 firmware, mode-switching dispatcher, sonified RSVP.
 
 **Suggested priority for next 90 days** (Q3 2026):
 - **Urgent**: C1 (dialog crate), C2 (barge-in), B-Apple (macOS-native default), T1+T2 (CSM TTS)
-- **High**: C3 (provenance event log), G1 (video demo), V1 (screen capture), N1 (Mediapipe MVP)
-- **Medium**: B-Kyutai, T4 (audio out), V2 (Moondream)
-- **Lower / next quarter**: V3, V4, V5, N2, N3, P1-3, G2-G4, remaining backends
+- **High**: C3 (provenance event log), G1 (video demo), V1 (screen capture), N1 (Mediapipe MVP), R1 (CognitiveEvent substrate)
+- **Medium**: B-Kyutai, T4 (audio out), V2 (Moondream), R2+R3 (bridge + pacing), Pr-RSVP-1 (reference compositor)
+- **Lower / next quarter**: V3, V4, V5, N2, N3, P1-3, G2-G4, Pr-RSVP-2..4, remaining backends
 
 ---
 
@@ -480,3 +583,5 @@ Compiled from six research waves; full per-axis bibliography lives in the agent 
 **Non-voice modalities**: [Tobii Pro SDK](https://developer.tobiipro.com/index.html), [Apple VisionOS](https://developer.apple.com/visionos/), [Mediapipe Hand Landmarker](https://ai.google.dev/edge/mediapipe/solutions/vision/hand_landmarker), [Mediapipe Gesture Recognizer](https://ai.google.dev/edge/mediapipe/solutions/vision/gesture_recognizer), [Ultraleap Hyperion](https://docs.ultraleap.com/hand-tracking/Hyperion/index.html), [Meta Neural Band](https://www.uploadvr.com/meta-semg-wristband-gestures-nature-paper/), [AlterEgo MIT](https://www.media.mit.edu/projects/alterego/overview/), [Cognixion Axon-R](https://axon-r.cognixion.com/), [Neurable licensing pivot](https://techcrunch.com/2026/04/28/bci-startup-neurable-looks-to-license-its-mind-reading-tech-for-consumer-wearables/), [Naqi](https://www.podfeet.com/blog/2026/02/ces-2026-naqi-logix/)
 
 **On-device speech/vision/TTS**: [parakeet-rs](https://github.com/altunenes/parakeet-rs), [whisper-rs](https://github.com/tazz4843/whisper-rs), [Moonshine](https://github.com/moonshine-ai/moonshine), [Kyutai DSM repo](https://github.com/kyutai-labs/delayed-streams-modeling), [Apple SpeechAnalyzer](https://developer.apple.com/documentation/speech/speechanalyzer), [WWDC25 Session 277](https://developer.apple.com/videos/play/wwdc2025/277/), [SpeechAnalyzerDylib (HN)](https://news.ycombinator.com/item?id=44431186), [Apple Foundation Models](https://developer.apple.com/documentation/FoundationModels), [Moondream 3](https://moondream.ai/blog/moondream-station-m3-preview), [Apple FastVLM](https://github.com/apple/ml-fastvlm), [Florence-2 on Roboflow](https://blog.roboflow.com/florence-2/), [Sesame csm.rs Candle impl](https://github.com/cartesia-one/csm.rs), [Kokoro-82M HF](https://huggingface.co/hexgrad/Kokoro-82M), [piper-rs](https://github.com/thewh1teagle/piper-rs), [Sherpa-ONNX](https://github.com/k2-fsa/sherpa-onnx), [swift-bridge](https://github.com/chinedufn/swift-bridge), [candle](https://github.com/huggingface/candle)
+
+**Output / temporal cognition (RSVP)**: [Wikipedia — RSVP](https://en.wikipedia.org/wiki/Rapid_serial_visual_presentation), [Adaptive RSVP — Öquist & Goldstein 2001-03](https://link.springer.com/chapter/10.1007/3-540-45756-9_18), [Spritz / regression-loss — Schotter et al.](https://www.sciencedirect.com/science/article/abs/pii/S0747563214007663), [Speed-comprehension tradeoff — PLOS One 2016](https://journals.plos.org/plosone/article?id=10.1371/journal.pone.0153786), [EEG-paced RSVP — Vortmann et al. CHI 2020](https://dl.acm.org/doi/fullHtml/10.1145/3313831.3376766), [Sonified RSVP — Goncu & Marriott](https://link.springer.com/chapter/10.1007/3-540-36572-9_39), [RSVP-BCI review — IOPscience](https://iopscience.iop.org/article/10.1088/1741-2552/aa9817), [RSVP Nano ESP32-S3 reference](https://github.com/search?q=rsvp+nano+esp32), [Prosopon — Display Server for Agents (Linear)](https://linear.app/broomva/project/prosopon-display-server-for-agents-b75c23a05005)
