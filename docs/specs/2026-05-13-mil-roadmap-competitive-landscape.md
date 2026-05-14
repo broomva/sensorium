@@ -7,6 +7,8 @@
 
 **Amendment 2026-05-13 (afternoon)**: Added Track R (Cognitive Stream Output) + Axis 7 (Output / Temporal cognition) covering RSVP and adaptive-pacing literature plus the agent-OS-as-cognitive-stream framing. Detail in §3.7 and §6.R.
 
+**Amendment 2026-05-13 (evening)**: Added §3.4.1 Interaction-native models in response to Thinking Machines' [*Interaction Models*](https://thinkingmachines.ai/blog/interaction-models/) paper (May 11 2026). Three concrete actions tracked in Linear: **B-Interaction-Models** (TML / Moshi v2 backend), **Eval-1** (FD-bench / TimeSpeak / CueSpeak benchmark battery), **Substrate-1** (time-awareness primitive in Provenance). The roadmap thesis is unchanged — TML validates it externally — but the VAD-scaffolded approach we ship today is structurally limited, and the mitigation path now has explicit substrate and backend tickets.
+
 ## TL;DR
 
 MIL has shipped its streaming substrate end-to-end (B1–B4, 5 PRs, all green). The competitive landscape has converged on **two dominant architectures that share one weakness**: cloud-blob voice agents (OpenAI Realtime-2, Gemini Live, Hume EVI) and composed open-source pipelines (LiveKit Agents, Pipecat). Neither side ships a **typed agent contract** that downstream programs reason over. Every shipping product treats voice output as opaque text or pixel coordinates. Apple App Intents is the closest typed-deictic-substrate in production, but Apple owns the runtime+OS+index.
@@ -215,6 +217,51 @@ Neither camp covers what users actually mean by "this": **the union of "what eye
 4. **Generation tagging / partial reasoning**. OpenAI Preambles are a UX hack. Pipecat has internal frame types. Nobody exposes generation provenance — what was streamed vs final, tool vs synthesis, draft vs committed — as a first-class typed signal.
 
 **Why MIL is differently positioned**: MIL — Rust-native, on-device, typed-substrate intent layer with streaming voice partials, generation tagging, and a directive contract — sits exactly in the gaps above. The market converged on either "give us audio, we give back audio" (cloud blob, no substrate) or "here are processors, wire them up" (Pipecat/LiveKit composability, no contract). **Nobody has the substrate.**
+
+### Axis 4.1: Interaction-native models (2026-05-13 amendment)
+
+A third architecture emerged after this spec's original drafting: **interaction-native models** that bake interactivity into the model itself rather than scaffolding it externally via VAD + turn-detection. Distinct from both the cloud-blob fused S2S (Axis 4-a) and the composed open-source pipeline (Axis 4-b).
+
+**Defining paper**: [Thinking Machines — *Interaction Models: A Scalable Approach to Human-AI Collaboration*](https://thinkingmachines.ai/blog/interaction-models/) (Mira Murati's lab, May 11 2026, DOI 10.64434/tml.20260511). Reference implementation: **TML-Interaction-Small** (276B MoE, 12B active). Closest existing open-weights analogue: **Kyutai Moshi** (current) / **Moshi v2** (forthcoming).
+
+**Architecture**:
+- **200ms micro-turns** — model processes input/output chunks continuously, interleaving perception and generation
+- **No artificial turn boundaries** — silence, overlap, and interruption remain in context
+- **Dual-layer split**: real-time Interaction Model handles immediate perception/response; asynchronous Background Model performs reasoning and tool-use, streams results back contextually
+
+**Key claim** (verbatim): *"For interactivity to scale with intelligence, it must be part of the model itself."*
+
+**Capabilities the VAD-scaffolded approach structurally cannot reach**:
+1. Proactive interruption without a spoken cue
+2. Visual-triggered interjection (the model decides to speak because the camera saw something)
+3. Simultaneous speech (live translation, overlapping turn-taking)
+4. Time-awareness (initiate speech at user-specified or context-derived times)
+5. Concurrent tool calls woven into ongoing speech
+
+**Reported benchmarks** (from the TML paper, vs GPT-Realtime-2 minimal):
+
+| Benchmark | TML-Interaction-Small | GPT-Realtime-2 minimal |
+|---|---|---|
+| FD-bench v1.5 (interaction quality) | 77.8 | 46.8 |
+| Audio MultiChallenge (intelligence APR) | 43.4 | 37.6 |
+| Responsiveness (turn-taking latency) | 0.40s | 1.18s |
+| **TimeSpeak** (initiate at user-specified time) | 64.7% | 4.3% |
+| **CueSpeak** (respond at semantically appropriate moments) | 81.7% | 2.9% |
+| RepCount-A (visual counting, off-by-one) | 35.4% | 1.3% |
+| ProactiveVideoQA (PAUC) | 33.5 | 25.0 |
+| Charades (mIoU temporal action localization) | 32.4 | 0% |
+
+**Direct architectural critique relevant to MIL**: the TML paper explicitly argues that VAD-based turn-detection is a "less intelligent harness" than the underlying model and structurally blocks capabilities 1–5 above. **MIL today uses exactly this kind of harness**: `EnergyVad` + `VadGate` hysteresis machine in `sensorium-voice`. The critique applies. Mitigation paths in priority order:
+
+1. **Near-term** (Q3): swap `EnergyVad` → Kyutai semantic VAD ([BRO-1074 B-Kyutai](https://linear.app/broomva/issue/BRO-1074)). Same harness shape, much smarter — predicts user-done-talking from prosody + content rather than RMS thresholds.
+2. **Medium-term** (Q4): adopt Moshi v2 or TML-Interaction-Small (when public preview opens) as a backend that bypasses the harness entirely. **Tracked as B-Interaction-Models** ticket.
+3. **Substrate-level**: thread monotonic time + elapsed-since-last-event into `Provenance` so the substrate carries the signals TimeSpeak / CueSpeak score against. **Tracked as Substrate-1**.
+
+**No typed contract is proposed by TML's paper.** The WebFetch of the post confirms: "No formal typed contract is proposed." Their model emits opaque text/audio/actions; an app builder still has to invent their own structured contract to consume it. **MIL's `Directive` typestate is exactly what their model lacks.** They become a backend; MIL becomes the substrate that lets apps consume any interaction-native model interchangeably.
+
+**Strategic implication**: same Spec E silicon play, applied at the interaction layer. Own the typed contract; let interaction-native models compete underneath the substrate. TML / Moshi v2 / future entrants slot into Track B's backend trait — `sensorium-voice::Backend::InteractionModel { variant: Tml | MoshiV2, ... }` — and inherit MIL's `StreamUpdate<TranscriptDelta>`, `Generation`, `Cancelled`, and downstream `Directive<S>` lifecycle for free.
+
+**Free evaluation vocabulary**: TML's internal benchmarks (FD-bench / TimeSpeak / CueSpeak / RepCount / ProactiveVideoQA / Charades) constitute the most useful artifact in the paper for MIL. The field lacked rigorous interaction-quality benchmarks; TML invented them. MIL adopts as the regression-test floor for streaming substrate. **Tracked as Eval-1** — `crates/sensorium-eval/` benchmark battery.
 
 ### Axis 5: Non-voice modalities (BCI / gaze / gesture / sEMG)
 
@@ -585,3 +632,5 @@ Compiled from six research waves; full per-axis bibliography lives in the agent 
 **On-device speech/vision/TTS**: [parakeet-rs](https://github.com/altunenes/parakeet-rs), [whisper-rs](https://github.com/tazz4843/whisper-rs), [Moonshine](https://github.com/moonshine-ai/moonshine), [Kyutai DSM repo](https://github.com/kyutai-labs/delayed-streams-modeling), [Apple SpeechAnalyzer](https://developer.apple.com/documentation/speech/speechanalyzer), [WWDC25 Session 277](https://developer.apple.com/videos/play/wwdc2025/277/), [SpeechAnalyzerDylib (HN)](https://news.ycombinator.com/item?id=44431186), [Apple Foundation Models](https://developer.apple.com/documentation/FoundationModels), [Moondream 3](https://moondream.ai/blog/moondream-station-m3-preview), [Apple FastVLM](https://github.com/apple/ml-fastvlm), [Florence-2 on Roboflow](https://blog.roboflow.com/florence-2/), [Sesame csm.rs Candle impl](https://github.com/cartesia-one/csm.rs), [Kokoro-82M HF](https://huggingface.co/hexgrad/Kokoro-82M), [piper-rs](https://github.com/thewh1teagle/piper-rs), [Sherpa-ONNX](https://github.com/k2-fsa/sherpa-onnx), [swift-bridge](https://github.com/chinedufn/swift-bridge), [candle](https://github.com/huggingface/candle)
 
 **Output / temporal cognition (RSVP)**: [Wikipedia — RSVP](https://en.wikipedia.org/wiki/Rapid_serial_visual_presentation), [Adaptive RSVP — Öquist & Goldstein 2001-03](https://link.springer.com/chapter/10.1007/3-540-45756-9_18), [Spritz / regression-loss — Schotter et al.](https://www.sciencedirect.com/science/article/abs/pii/S0747563214007663), [Speed-comprehension tradeoff — PLOS One 2016](https://journals.plos.org/plosone/article?id=10.1371/journal.pone.0153786), [EEG-paced RSVP — Vortmann et al. CHI 2020](https://dl.acm.org/doi/fullHtml/10.1145/3313831.3376766), [Sonified RSVP — Goncu & Marriott](https://link.springer.com/chapter/10.1007/3-540-36572-9_39), [RSVP-BCI review — IOPscience](https://iopscience.iop.org/article/10.1088/1741-2552/aa9817), [RSVP Nano ESP32-S3 reference](https://github.com/search?q=rsvp+nano+esp32), [Prosopon — Display Server for Agents (Linear)](https://linear.app/broomva/project/prosopon-display-server-for-agents-b75c23a05005)
+
+**Interaction-native models (Axis 4.1)**: [Thinking Machines — Interaction Models, May 11 2026](https://thinkingmachines.ai/blog/interaction-models/) (DOI 10.64434/tml.20260511), [Kyutai Moshi](https://github.com/kyutai-labs/moshi) (open-weights interaction-native baseline), [LMSYS Audio MultiChallenge](https://lmsys.org) (intelligence benchmark referenced), TML's FD-bench v1.5 / TimeSpeak / CueSpeak / RepCount / ProactiveVideoQA / Charades benchmark family (defined in the paper).
